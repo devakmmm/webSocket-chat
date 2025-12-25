@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WebSocket Chat Terminal</title>
+<style>
+:root{
+  --bg: #000000;
+  --panel: rgba(255,255,255,.03);
+  --text: #e8ecf4;
+  --muted: rgba(232,236,244,.60);
+  --line: rgba(110,168,254,.15);
+  --accent: #6ea8fe;
+  --accent2: #7ee1ff;
+  --glow: rgba(110,168,254,.4);
+  --radius: 12px;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+
+body{
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  background: #000;
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+/* Animated Grid Background */
+.grid-bg{
+  position: fixed;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(110,168,254,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110,168,254,.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: gridMove 20s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes gridMove {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(60px, 60px); }
+}
+
+/* Animated Orbs */
+.orb{
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: .3;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb1{
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(110,168,254,.6), transparent);
+  top: -200px;
+  left: -100px;
+  animation: float1 15s ease-in-out infinite;
+}
+
+.orb2{
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(126,225,255,.5), transparent);
+  bottom: -150px;
+  right: -100px;
+  animation: float2 18s ease-in-out infinite;
+}
+
+.orb3{
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(147,51,234,.4), transparent);
+  top: 40%;
+  right: 20%;
+  animation: float3 20s ease-in-out infinite;
+}
+
+@keyframes float1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(100px, 100px) scale(1.1); }
+}
+
+@keyframes float2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-80px, -120px) scale(1.15); }
+}
+
+@keyframes float3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-60px, 80px) scale(1.08); }
+}
+
+.app{
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+/* Glowing Header */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(10,10,15,.85);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 0 40px rgba(110,168,254,.1),
+              inset 0 1px 0 rgba(255,255,255,.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.topbar::before{
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(110,168,254,.1), transparent);
+  animation: shine 3s ease-in-out infinite;
+}
+
+@keyframes shine {
+  0% { left: -100%; }
+  50%, 100% { left: 100%; }
+}
+
+.brand{
+  display:flex;
+  gap:16px;
+  align-items:center;
+}
+
+.logo{
+  width:52px;
+  height:52px;
+  border-radius: 10px;
+  display:grid;
+  place-items:center;
+  font-weight:900;
+  font-size: 20px;
+  letter-spacing:1px;
+  background: linear-gradient(135deg, #6ea8fe, #7ee1ff);
+  color: #000;
+  box-shadow: 0 0 30px rgba(110,168,254,.5),
+              inset 0 1px 0 rgba(255,255,255,.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 30px rgba(110,168,254,.5), inset 0 1px 0 rgba(255,255,255,.3); }
+  50% { box-shadow: 0 0 50px rgba(110,168,254,.8), inset 0 1px 0 rgba(255,255,255,.5); }
+}
+
+.title{ 
+  font-size: 18px; 
+  font-weight: 700;
+  background: linear-gradient(90deg, #fff, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle{ 
+  font-size: 11px; 
+  color: var(--muted); 
+  margin-top:4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34,197,94,.6);
+  animation: blink 2s ease-in-out infinite;
+}
+.status-dot.warn{
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245,158,11,.6);
+}
+.status-dot.err{
+  background: #ef4444;
+  box-shadow: 0 0 10px rgba(239,68,68,.6);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .3; }
+}
+
+.actions{ display:flex; gap:10px; }
+
+.grid{
+  display:grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+/* Sidebar Panel */
+.panel{
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(10,10,15,.7);
+  backdrop-filter: blur(20px);
+  padding: 20px;
+  box-shadow: 0 0 40px rgba(110,168,254,.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.panel::before{
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  height: 100px;
+  background: linear-gradient(180deg, rgba(110,168,254,.2), transparent);
+  pointer-events: none;
+}
+
+.panelTitle{
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelTitle::before{
+  content: '◆';
+  font-size: 8px;
+}
+
+.onlineList{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+
+.onlineRow{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(110,168,254,.15);
+  border-radius: 8px;
+  background: rgba(110,168,254,.03);
+  transition: all .3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.onlineRow::before{
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent), var(--accent2));
+  transform: scaleY(0);
+  transition: transform .3s ease;
+}
+
+.onlineRow:hover{
+  background: rgba(110,168,254,.08);
+  border-color: rgba(110,168,254,.3);
+  transform: translateX(4px);
+}
+
+.onlineRow:hover::before{
+  transform: scaleY(1);
+}
+
+.dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(126,225,255,.7);
+  box-shadow: 0 0 12px rgba(126,225,255,.5);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.dot.me{
+  background: var(--accent);
+  box-shadow: 0 0 15px var(--accent);
+}
+
+.onlineName{
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Chat Area */
+.chat{
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(10,10,15,.7);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 0 40px rgba(110,168,254,.08);
+  display:flex;
+  flex-direction:column;
+  min-height: 600px;
+  position: relative;
+  overflow: hidden;
+}
+
+.chat::before{
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(110,168,254,.03) 90deg, transparent 180deg);
+  animation: rotate 10s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes rotate {
+  100% { transform: rotate(360deg); }
+}
+
+.messages{
+  padding: 20px;
+  flex: 1;
+  overflow:auto;
+  position: relative;
+  z-index: 1;
+}
+
+.messages::-webkit-scrollbar{ width: 8px; }
+.messages::-webkit-scrollbar-track{ background: transparent; }
+.messages::-webkit-scrollbar-thumb{ 
+  background: rgba(110,168,254,.3); 
+  border-radius: 4px;
+}
+.messages::-webkit-scrollbar-thumb:hover{ background: rgba(110,168,254,.5); }
+
+.msg{
+  display:flex;
+  margin: 14px 0;
+  animation: msgSlide .3s ease;
+}
+
+@keyframes msgSlide {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg.system{
+  justify-content:center;
+  font-size: 11px;
+  color: var(--muted);
+  gap: 10px;
+  align-items:center;
+}
+
+.pill{
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(110,168,254,.25);
+  background: rgba(110,168,254,.08);
+  backdrop-filter: blur(10px);
+}
+
+.msg.mine{ justify-content:flex-end; }
+.msg.theirs{ justify-content:flex-start; }
+
+.bubble{
+  max-width: 70%;
+  border: 1px solid rgba(110,168,254,.2);
+  background: rgba(10,10,15,.6);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.2);
+  position: relative;
+}
+
+.msg.mine .bubble{
+  border-color: rgba(110,168,254,.4);
+  background: linear-gradient(135deg, rgba(110,168,254,.15), rgba(126,225,255,.08));
+  box-shadow: 0 4px 20px rgba(110,168,254,.15);
+}
+
+.meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.name{ 
+  font-weight: 600; 
+  color: var(--accent2);
+  text-shadow: 0 0 10px rgba(126,225,255,.3);
+}
+
+.body{
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.time{ 
+  font-variant-numeric: tabular-nums;
+  opacity: .6;
+}
+
+/* Composer */
+.composer{
+  display:flex;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 2;
+}
+
+.input{
+  flex:1;
+  background: rgba(110,168,254,.05);
+  border: 1px solid rgba(110,168,254,.2);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 12px 14px;
+  outline: none;
+  transition: all .3s ease;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.input:focus{
+  border-color: var(--accent);
+  box-shadow: 0 0 20px rgba(110,168,254,.3);
+  background: rgba(110,168,254,.08);
+}
+
+.btn{
+  border: 1px solid rgba(110,168,254,.25);
+  background: rgba(110,168,254,.08);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor:pointer;
+  transition: all .3s ease;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.btn:hover{ 
+  background: rgba(110,168,254,.15);
+  border-color: rgba(110,168,254,.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(110,168,254,.2);
+}
+
+.btn:active{ transform: translateY(0); }
+
+.btn.primary{
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #000;
+  font-weight: 700;
+  box-shadow: 0 0 20px rgba(110,168,254,.4);
+}
+
+.btn.primary:hover{
+  box-shadow: 0 0 30px rgba(110,168,254,.6);
+  filter: brightness(1.1);
+}
+
+.btn.ghost{
+  background: transparent;
+  border-color: rgba(110,168,254,.15);
+}
+
+.btn.ghost:hover{
+  background: rgba(110,168,254,.08);
+}
+
+.footer{
+  display:flex;
+  justify-content:space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.muted{ 
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.muted::before{
+  content: '▸';
+  color: var(--accent);
+  font-size: 10px;
+}
+
+/* Modal */
+.backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.8);
+  backdrop-filter: blur(10px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 20px;
+  z-index: 100;
+  animation: fadeIn .3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hidden{ display:none; }
+
+.modal{
+  width: min(480px, 100%);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(10,10,15,.95);
+  backdrop-filter: blur(30px);
+  box-shadow: 0 0 60px rgba(110,168,254,.3);
+  padding: 24px;
+  animation: modalSlide .3s ease;
+}
+
+@keyframes modalSlide {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.modalTitle{ 
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 16px;
+  background: linear-gradient(90deg, #fff, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.modalBody{ 
+  display:flex; 
+  flex-direction:column; 
+  gap: 10px;
+}
+
+.modalHelp{ 
+  font-size: 11px; 
+  color: var(--muted);
+}
+
+.modalActions{ 
+  display:flex; 
+  justify-content:flex-end; 
+  gap: 10px; 
+  margin-top: 20px;
+}
+
+@media (max-width: 1024px){
+  .grid{ grid-template-columns: 1fr; }
+  .panel{ min-height: auto; }
+  .chat{ min-height: 500px; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="app">
+<header class="topbar">
+<div class="brand">
+<div class="logo">WS</div>
+<div>
+<div class="title">WebSocket Terminal</div>
+<div class="subtitle">
+<span id="statusDot" class="status-dot" aria-hidden="true"></span>
+<span id="status">Connecting…</span>
+</div>
+</div>
+</div>
+<div class="actions">
+<button id="changeNameBtn" class="btn ghost" type="button">Change ID</button>
+<button id="clearBtn" class="btn ghost" type="button">Clear Log</button>
+</div>
+</header>
+
+<main class="grid">
+<section class="panel" aria-label="Online users">
+<div class="panelTitle">Active Nodes</div>
+<div id="onlineList" class="onlineList"></div>
+</section>
+
+<section class="chat" aria-label="Chat messages">
+<div id="messages" class="messages" aria-live="polite"></div>
+<form id="chatForm" class="composer" autocomplete="off">
+<label class="sr-only" for="messageInput" style="position:absolute;left:-9999px;">Message</label>
+<input id="messageInput" class="input" placeholder="Enter transmission…" maxlength="2000" />
+<button class="btn primary" type="submit">Transmit</button>
+</form>
+</section>
+</main>
+
+<footer class="footer">
+<div class="muted">Real-time bidirectional communication via WebSocket protocol</div>
+<div class="muted">Open multiple instances to test multi-node connectivity</div>
+</footer>
+</div>
+
+<div id="modalBackdrop" class="backdrop hidden" role="dialog" aria-modal="true" aria-label="Change display name">
+<div class="modal">
+<div class="modalTitle">Configure Node Identity</div>
+<div class="modalBody">
+<input id="nameInput" class="input" placeholder="e.g., NODE-Alpha" maxlength="24" />
+<div class="modalHelp">Maximum 24 characters. Session-only identifier.</div>
+</div>
+<div class="modalActions">
+<button id="cancelNameBtn" class="btn ghost" type="button">Abort</button>
+<button id="saveNameBtn" class="btn primary" type="button">Confirm</button>
+</div>
+</div>
+</div>
+
+<script>
+'use strict';
+
+const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = `${proto}//${window.location.host}`;
+let ws = null;
+let myUserId = null;
+
+const statusEl = document.getElementById('status');
+const statusDot = document.getElementById('statusDot');
+const onlineListEl = document.getElementById('onlineList');
+const messagesEl = document.getElementById('messages');
+const chatForm = document.getElementById('chatForm');
+const messageInput = document.getElementById('messageInput');
+const changeNameBtn = document.getElementById('changeNameBtn');
+const clearBtn = document.getElementById('clearBtn');
+const modalBackdrop = document.getElementById('modalBackdrop');
+const nameInput = document.getElementById('nameInput');
+const saveNameBtn = document.getElementById('saveNameBtn');
+const cancelNameBtn = document.getElementById('cancelNameBtn');
+
+function setStatus(text, level = 'ok') {
+  statusEl.textContent = text;
+  statusDot.classList.remove('warn', 'err');
+  if (level === 'warn') statusDot.classList.add('warn');
+  if (level === 'err') statusDot.classList.add('err');
+}
+
+function connect() {
+  setStatus('Connecting…', 'warn');
+  ws = new WebSocket(wsUrl);
+
+  ws.addEventListener('open', () => {
+    setStatus('Connected', 'ok');
+  });
+
+  ws.addEventListener('message', (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch (err) {
+      console.error('Parse error:', err);
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    setStatus('Disconnected (retrying)', 'warn');
+    addSystemMessage('Disconnected. Reconnecting…');
+    setTimeout(connect, 1200);
+  });
+
+  ws.addEventListener('error', () => {
+    setStatus('Connection error', 'err');
+  });
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'welcome':
+      myUserId = msg.you.id;
+      renderOnlineList(msg.online);
+      addSystemMessage(`Connected as ${msg.you.name}`);
+      // Prompt for name if default server-generated
+      if (/^user-\d+$/.test(msg.you.name)) openModal();
+      break;
+
+    case 'presence':
+      renderOnlineList(msg.online);
+      if (msg.action === 'join') addSystemMessage(`${msg.user.name} joined`);
+      if (msg.action === 'leave') addSystemMessage(`${msg.user.name} left`);
+      if (msg.action === 'rename') {
+        if (msg.user.id !== myUserId) addSystemMessage(`User renamed to ${msg.user.name}`);
+      }
+      break;
+
+    case 'name_set':
+      myUserId = msg.you.id;
+      renderOnlineList(msg.online);
+      addSystemMessage(`Identity updated to ${msg.you.name}`);
+      break;
+
+    case 'chat':
+      addChatMessage(msg);
+      break;
+  }
+}
+
+function renderOnlineList(users) {
+  onlineListEl.innerHTML = users.map(u => `
+    <div class="onlineRow">
+      <div class="dot ${u.id === myUserId ? 'me' : ''}"></div>
+      <div class="onlineName">${escapeHtml(u.name)}${u.id === myUserId ? ' (you)' : ''}</div>
+    </div>
+  `).join('');
+}
+
+function addSystemMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'msg system';
+  div.innerHTML = `<span class="pill">${escapeHtml(text)}</span>`;
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+function addChatMessage(msg) {
+  const isMine = msg.from.id === myUserId;
+  const time = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const div = document.createElement('div');
+  div.className = `msg ${isMine ? 'mine' : 'theirs'}`;
+  div.innerHTML = `
+    <div class="bubble">
+      <div class="meta">
+        <span class="name">${escapeHtml(msg.from.name)}</span>
+        <span class="time">${time}</span>
+      </div>
+      <div class="body">${escapeHtml(msg.body)}</div>
+    </div>
+  `;
+  messagesEl.appendChild(div);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+chatForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = messageInput.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  ws.send(JSON.stringify({ type: 'chat', body: text }));
+  messageInput.value = '';
+  messageInput.focus();
+});
+
+function openModal() {
+  modalBackdrop.classList.remove('hidden');
+  nameInput.value = '';
+  setTimeout(() => nameInput.focus(), 0);
+}
+
+function closeModal() {
+  modalBackdrop.classList.add('hidden');
+  nameInput.value = '';
+  messageInput.focus();
+}
+
+changeNameBtn.addEventListener('click', () => openModal());
+
+saveNameBtn.addEventListener('click', () => {
+  const name = nameInput.value.trim();
+  if (!name || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  ws.send(JSON.stringify({ type: 'set_name', name }));
+  closeModal();
+});
+
+cancelNameBtn.addEventListener('click', closeModal);
+
+modalBackdrop.addEventListener('click', (e) => {
+  if (e.target === modalBackdrop) closeModal();
+});
+
+nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveNameBtn.click(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+});
+
+clearBtn.addEventListener('click', () => {
+  messagesEl.innerHTML = '';
+  addSystemMessage('Log cleared.');
+});
+
+connect();
+</script>
+</body>
+</html>
