@@ -2,18 +2,29 @@
 
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const express = require('express');
 const WebSocket = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL; // e.g., https://webwidget-2hpa.onrender.com
 
 const app = express();
 
 // Serve the frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health endpoint for platforms like Render
-app.get('/health', (_req, res) => res.status(200).send('ok'));
+// Enhanced health endpoint with uptime
+let serverStartTime = Date.now();
+app.get('/health', (_req, res) => {
+  const uptime = Math.floor((Date.now() - serverStartTime) / 1000);
+  res.status(200).json({ 
+    status: 'ok', 
+    uptime: `${uptime}s`,
+    clients: clients.size,
+    timestamp: new Date().toISOString()
+  });
+});
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -116,7 +127,7 @@ function startBotIfNeeded() {
   botActive = true;
   botPresence('join');
 
-  botChat("Signal acquired. You're solo. Type /help for commands, or send any message and I’ll respond.");
+  botChat("Signal acquired. You're solo. Type /help for commands, or send any message and I'll respond.");
 
   // light idle prompt if user stays quiet
   botIdleTimer = setInterval(() => {
@@ -164,7 +175,7 @@ function botReply(text) {
     return;
   }
   if (lower.includes('bug') || lower.includes('error')) {
-    botChat("Paste the exact error text + where it occurs and I’ll pinpoint the fix.");
+    botChat("Paste the exact error text + where it occurs and I'll pinpoint the fix.");
     return;
   }
   if (lower.includes('hello') || lower.includes('hi')) {
@@ -172,13 +183,45 @@ function botReply(text) {
     return;
   }
   if (t.endsWith('?')) {
-    botChat("Good question. Give me one more detail (context or constraint) and I’ll answer precisely.");
+    botChat("Good question. Give me one more detail (context or constraint) and I'll answer precisely.");
     return;
   }
 
   // default: short reflective response
   const clip = t.length > 140 ? `${t.slice(0, 140)}…` : t;
   botChat(`Acknowledged: "${clip}" — do you want to iterate on UI, add rooms, or add persistence next?`);
+}
+
+/* ----------------------------
+   HEARTBEAT / KEEP-ALIVE
+   Prevents Render free tier from spinning down after 15 min idle
+   ---------------------------- */
+
+function startHeartbeat() {
+  if (!RENDER_EXTERNAL_URL) {
+    console.log('⚠️  RENDER_EXTERNAL_URL not set. Heartbeat disabled (fine for local dev).');
+    return;
+  }
+
+  const healthUrl = `${RENDER_EXTERNAL_URL}/health`;
+  
+  console.log(`💓 Heartbeat enabled: pinging ${healthUrl} every 10 minutes`);
+
+  // Ping every 10 minutes (600000ms)
+  // Render free tier spins down after 15 min of inactivity
+  setInterval(() => {
+    const protocol = RENDER_EXTERNAL_URL.startsWith('https') ? https : http;
+    
+    protocol.get(healthUrl, (res) => {
+      if (res.statusCode === 200) {
+        console.log(`💓 Heartbeat OK (${new Date().toLocaleTimeString()})`);
+      } else {
+        console.log(`⚠️  Heartbeat received ${res.statusCode}`);
+      }
+    }).on('error', (err) => {
+      console.error('❌ Heartbeat failed:', err.message);
+    });
+  }, 10 * 60 * 1000); // 10 minutes
 }
 
 /* ----------------------------
@@ -268,5 +311,9 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`WebSocket Terminal Chat listening on port ${PORT}`);
+  console.log(`🚀 WebSocket Terminal Chat listening on port ${PORT}`);
+  console.log(`📊 Health check available at /health`);
+  
+  // Start heartbeat after server is running
+  startHeartbeat();
 });
